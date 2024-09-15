@@ -1,0 +1,7 @@
+bamanai
+frontend/node_modules
+frontend/package-lock.json
+frontend/yarn.lock
+.DS_Store
+.env
+frontend/.env
