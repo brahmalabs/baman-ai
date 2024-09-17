@@ -114,12 +114,39 @@ def add_student_to_assistant():
     if not student or not assistant:
         return jsonify({'error': 'Student or assistant not found'}), 404
 
+    if student in assistant.allowed_students:
+        return jsonify({'error': 'Student already in assistant'}), 400
     assistant.allowed_students.append(student)
     assistant.save()
     student.allowed_assistants.append(assistant)
     student.save()
 
     return jsonify({'message': 'Student added to assistant successfully'})
+
+@app.route('/remove_student_from_assistant', methods=['POST'])
+@token_required_teacher
+def remove_student_from_assistant():
+    data = request.json
+    student_id = data.get('student_id')
+    assistant_id = data.get('assistant_id')
+
+    if not student_id or not assistant_id:
+        return jsonify({'error': 'Student ID and assistant ID are required'}), 400
+
+    student = Student.objects(id=student_id).first()
+    assistant = Assistant.objects(id=assistant_id).first()
+    
+    if not student or not assistant:
+        return jsonify({'error': 'Student or assistant not found'}), 404
+
+    if student in assistant.allowed_students:
+        assistant.allowed_students.remove(student)
+        assistant.save()
+    if assistant in student.allowed_assistants:
+        student.allowed_assistants.remove(assistant)
+        student.save()
+
+    return jsonify({'message': 'Student removed from assistant successfully'})
 
 # Route to get all assistants for a teacher
 @app.route('/get_assistants', methods=['GET'])
@@ -225,6 +252,10 @@ def get_assistant(assistant_id):
         'id': assistant.id,
         'subject': assistant.subject,
         'class_name': assistant.class_name,
+        'profile_picture': assistant.profile_picture,
+        'about': assistant.about,
+        'created_at': assistant.created_at,
+        'updated_at': assistant.updated_at,
         'own_content': [content.to_mongo().to_dict() for content in assistant.own_content],
         'supporting_content': [content.to_mongo().to_dict() for content in assistant.supporting_content],
         'allowed_students': [str(student.id) for student in assistant.allowed_students]
