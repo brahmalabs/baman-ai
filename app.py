@@ -1,7 +1,7 @@
 from mongoengine import connect
 from flask import Flask, jsonify, request, g
 import jwt
-from datetime import datetime, UTC
+from datetime import datetime, UTC, timedelta
 from models.teacher import Teacher
 from middlewares.authentication import token_required_teacher, token_required_student
 from dotenv import load_dotenv
@@ -52,17 +52,17 @@ def verify_teacher():
             email=user_info['email'],
             name=user_info.get('name', ''),
             profile_picture=user_info.get('picture', ''),
-            created_at=datetime.datetime.now(datetime.UTC),
-            last_login=datetime.datetime.now(datetime.UTC)
+            created_at=datetime.now(UTC),
+            last_login=datetime.now(UTC)
         )
         user.save()
     else:
-        user.update(last_login=datetime.datetime.now(datetime.UTC))
+        user.update(last_login=datetime.now(UTC))
 
     jwt_token = jwt.encode({
         'sub': user.google_id,
         'email': user.email,
-        'exp': datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=30)
+        'exp': datetime.now(UTC) + timedelta(days=30)
     }, app.config['SECRET_KEY'], algorithm='HS256')
 
     return jsonify({'jwt_token': jwt_token})
@@ -126,7 +126,18 @@ def add_student_to_assistant():
 @token_required_teacher
 def get_assistants():
     assistants = Assistant.objects(teacher=g.current_user)
-    assistants_list = [{'id': assistant.id, 'subject': assistant.subject, 'class_name': assistant.class_name} for assistant in assistants]
+    assistants_list = [
+        {
+            'id': assistant.id,
+            'subject': assistant.subject,
+            'class_name': assistant.class_name,
+            'profile_picture': assistant.profile_picture,
+            'about': assistant.about,
+            'created_at': assistant.created_at,
+            'updated_at': assistant.updated_at
+        }
+        for assistant in assistants
+    ]
 
     return jsonify({'assistants': assistants_list})
 
@@ -244,17 +255,17 @@ def verify_student():
             email=user_info['email'],
             name=user_info.get('name', ''),
             profile_picture=user_info.get('picture', ''),
-            created_at=datetime.datetime.now(datetime.UTC),
-            last_login=datetime.datetime.now(datetime.UTC)
+            created_at=datetime.now(datetime.UTC),
+            last_login=datetime.now(datetime.UTC)
         )
         user.save()
     else:
-        user.update(last_login=datetime.datetime.now(datetime.UTC))
+        user.update(last_login=datetime.now(datetime.UTC))
 
     jwt_token = jwt.encode({
         'sub': user.google_id,
         'email': user.email,
-        'exp': datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=30)
+        'exp': datetime.now(datetime.UTC) + timedelta(days=30)
     }, app.config['SECRET_KEY'], algorithm='HS256')
 
     return jsonify({'jwt_token': jwt_token})
