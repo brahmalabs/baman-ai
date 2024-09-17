@@ -10,7 +10,7 @@ import io
 import os
 from urllib.parse import urlparse
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.chains.summarize import load_summarize_chain
+from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
 from langchain_community.chat_models import ChatOpenAI
 from langchain_community.docstore.document import Document
@@ -21,7 +21,7 @@ import openai
 from pinecone import Pinecone, ServerlessSpec
 from models.assistant import Content
 from collections import defaultdict
-
+import json
 pc = Pinecone(
     api_key=os.getenv('PINECONE_API_KEY')
 )
@@ -66,7 +66,7 @@ class Utils:
             response = requests.get(file_url)
             response.raise_for_status()
             content = response.content
-
+            
             if file_type == 'pdf':
                 return Utils.extract_text_from_pdf(content)
             elif file_type == 'docx':
@@ -142,9 +142,17 @@ class Utils:
     @staticmethod
     def get_summary(text: str, max_tokens: int) -> str:
         llm = ChatOpenAI(temperature=0, model_name="gpt-3.5-turbo-1106")
-        chain = load_summarize_chain(llm, chain_type="stuff")
-        summary = chain.run([Document(page_content=text)])
-        return summary[:max_tokens]
+        prompt_template = PromptTemplate(
+            input_variables=["text", "max_tokens"],
+            template="""
+            Summarize the following text in up to {max_tokens} tokens:
+
+            Text: {text}
+            """
+        )
+        chain = LLMChain(llm=llm, prompt=prompt_template)
+        summary = chain.run({"text": text, "max_tokens": max_tokens})
+        return summary
 
     @staticmethod
     def get_metadata(text: str) -> Dict[str, List[str]]:
@@ -155,7 +163,7 @@ class Utils:
             1. Title (single string)
             2. Topics (list of strings)
             3. Keywords (list of strings)
-            4. Questions that this content can answer (list of strings)
+            4. Questions (that this content can answer) (list of strings)
 
             Provide the output in JSON format.
 
@@ -171,19 +179,36 @@ class Utils:
             ],
             temperature=0
         )
-        return eval(response.choices[0].message.content)
+        return Utils.extract_json_data(response.choices[0].message.content)
 
     @staticmethod
+    def extract_json_data(response):
+      """
+      Extract JSON data from the response.
+      
+      :param response: Response from the API.
+      :return: JSON data.
+      """
+      # trim the response from first occurence of '{' to the last occurence of '}'
+      start = response.find('{')
+      end = response.rfind('}') + 1
+      response = response[start:end]
+      response = json.loads(response)
+      return response
+    
+    @staticmethod
     def get_embeddings(text: str) -> List[float]:
-        response = openai.Embedding.create(
+        client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+        response = client.embeddings.create(
             input=[text],
             model="text-embedding-3-small"
         )
-        return response['data'][0]['embedding']
+        return response.data[0].embedding
 
     @staticmethod
     def upload_to_pinecone(assistant_id: str, content_id: str, digest_id: str, label_type: str, text: str, o_or_s_label: str):
         embeddings = Utils.get_embeddings(text)
+        print('###### UPLOADING TO PINECONE ######')
         pinecone_id = f"{assistant_id}__{content_id}__{digest_id}__{label_type}__{o_or_s_label}"
         metadata = {
             "assistant_id": assistant_id,
@@ -209,7 +234,7 @@ class Utils:
             input_variables=["text"],
             template="""
             Extract the following information from the given text:
-            1. Refined Question (single string)
+            1. RefinedQuestion (single string)
             2. Topics (list of strings)
             3. Title (single string)
             4. Keywords (list of strings)
@@ -228,7 +253,7 @@ class Utils:
             ],
             temperature=0
         )
-        return eval(response.choices[0].message.content)
+        return Utils.extract_json_data(response.choices[0].message.content)
 
     @staticmethod
     def generate_chat_response(user_message: str, conversation_summary: str, last_two_messages: List[Dict[str, str]], own_context: List[Dict[str, str]], supported_context: List[Dict[str, str]]) -> str:

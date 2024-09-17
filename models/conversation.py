@@ -4,14 +4,12 @@ from models.assistant import Assistant
 import uuid
 
 class Reference(EmbeddedDocument):
-    pinecone_id = StringField(required=True)
-    match_score = FloatField(required=True)
+    content_id_digest_id = StringField(required=True)
+    weighted_score = FloatField(required=True)
 
 class References(EmbeddedDocument):
-    title_matches = EmbeddedDocumentListField(Reference)
-    topic_matches = EmbeddedDocumentListField(Reference)
-    keyword_matches = EmbeddedDocumentListField(Reference)
-    content_matches = EmbeddedDocumentListField(Reference)
+    own = EmbeddedDocumentListField(Reference)
+    supporting = EmbeddedDocumentListField(Reference)
 
 class UserMessage(EmbeddedDocument):
     message = StringField(required=True)
@@ -26,10 +24,10 @@ class AssistantMessage(EmbeddedDocument):
 
 class Message(EmbeddedDocument):
     sender = StringField(required=True, choices=['user', 'assistant'])
-    content = GenericEmbeddedDocumentField(choices=[UserMessage, AssistantMessage])  # Updated line
+    content = GenericEmbeddedDocumentField(choices=[UserMessage, AssistantMessage])
 
 class Conversation(Document):
-    uuid = UUIDField(required=True, default=uuid.uuid4, unique=True)
+    id = StringField(default=lambda: str(uuid.uuid4()), primary_key=True)
     student = ReferenceField(Student, required=True)
     assistant = ReferenceField(Assistant, required=True)
     conversation_summary = StringField()
@@ -39,4 +37,4 @@ class Conversation(Document):
     questions = ListField(StringField())
     messages = EmbeddedDocumentListField(Message)
 
-    meta = {'collection': 'conversations'}
+    # meta = {'collection': 'conversations'}

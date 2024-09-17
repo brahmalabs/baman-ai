@@ -1,7 +1,7 @@
 from mongoengine import connect
 from flask import Flask, jsonify, request, g
 import jwt
-import datetime
+from datetime import datetime, UTC
 from models.teacher import Teacher
 from middlewares.authentication import token_required_teacher, token_required_student
 from dotenv import load_dotenv
@@ -11,7 +11,7 @@ from services.google_login import GoogleLogin
 import os
 from models.assistant import Assistant, Content, DigestedContent
 from models.student import Student
-from models.conversation import Conversation, UserMessage, AssistantMessage, References
+from models.conversation import Conversation, UserMessage, AssistantMessage, References, Message
 from utils import Utils
 
 
@@ -89,9 +89,37 @@ def create_assistant():
         subject=subject,
         class_name=class_name
     )
+    if data.get('profile_picture'):
+        assistant.profile_picture = data.get('profile_picture')
+    if data.get('about'):
+        assistant.about = data.get('about')
+    assistant.created_at = datetime.now(UTC)
     assistant.save()
 
     return jsonify({'message': 'Assistant created successfully', 'assistant_id': assistant.id})
+
+@app.route('/add_student_to_assistant', methods=['POST'])
+@token_required_teacher
+def add_student_to_assistant():
+    data = request.json
+    student_id = data.get('student_id')
+    assistant_id = data.get('assistant_id')
+
+    if not student_id or not assistant_id:
+        return jsonify({'error': 'Student ID and assistant ID are required'}), 400
+
+    student = Student.objects(id=student_id).first()
+    assistant = Assistant.objects(id=assistant_id).first()
+    
+    if not student or not assistant:
+        return jsonify({'error': 'Student or assistant not found'}), 404
+
+    assistant.allowed_students.append(student)
+    assistant.save()
+    student.allowed_assistants.append(assistant)
+    student.save()
+
+    return jsonify({'message': 'Student added to assistant successfully'})
 
 # Route to get all assistants for a teacher
 @app.route('/get_assistants', methods=['GET'])
@@ -121,11 +149,12 @@ def digest():
 
         short_summary = Utils.get_summary(text_content, 100)
         long_summary = Utils.get_summary(text_content, 500)
-
+        print("##### SUMMARIES DONE #####")
         metadata = Utils.get_metadata(long_summary)
+        print("##### METADATA DONE #####")
 
         content = Content(
-            type=file_type,
+            file_type=file_type,
             content=text_content,
             fileUrl=fileUrl,
             title=metadata['Title'],
@@ -134,8 +163,9 @@ def digest():
             short_summary=short_summary,
             long_summary=long_summary
         )
-
+        
         chunks = Utils.create_chunks(text_content)
+        print("##### CHUNKS DONE #####")
         for chunk in chunks:
             chunk_metadata = Utils.get_metadata(chunk)
             digested_content = DigestedContent(
@@ -167,10 +197,30 @@ def digest():
 
         return jsonify({
             'message': f'Processed {file_type} file',
-            'content': content.to_dict()
+            'content': content.to_mongo().to_dict()
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
+# Route to get an assistant by ID
+@app.route('/get_assistant/<assistant_id>', methods=['GET'])
+@token_required_teacher
+def get_assistant(assistant_id):
+    assistant = Assistant.objects(id=assistant_id, teacher=g.current_user).first()
+    if not assistant:
+        return jsonify({'error': 'Assistant not found'}), 404
+
+    assistant_data = {
+        'id': assistant.id,
+        'subject': assistant.subject,
+        'class_name': assistant.class_name,
+        'own_content': [content.to_mongo().to_dict() for content in assistant.own_content],
+        'supporting_content': [content.to_mongo().to_dict() for content in assistant.supporting_content],
+        'allowed_students': [str(student.id) for student in assistant.allowed_students]
+    }
+
+    return jsonify({'assistant': assistant_data})
+
 
 # Route for student verification
 @app.route('/verify-student', methods=['POST'])
@@ -223,16 +273,24 @@ def chat():
 
     # Create a new conversation if conversation_id is not provided
     if not conversation_id:
-        conversation = Conversation(student=g.user, assistant=Assistant.objects(id=assistant_id).first())
+        conversation = Conversation(
+            student=g.current_user,
+            assistant=Assistant.objects(id=assistant_id).first()
+        )
         conversation.save()
+        conversation_id = conversation.id
     else:
         conversation = Conversation.objects(id=conversation_id).first()
         if not conversation:
             return jsonify({'error': 'Invalid conversation_id'}), 400
 
+    assistant = Assistant.objects(id=assistant_id).first()
+    if not assistant:
+        return jsonify({'error': 'Invalid assistant_id'}), 400
+    
     # Extract metadata from the current message using Utils
     metadata = Utils.extract_chat_metadata(user_message)
-    refined_question = metadata['Refined Question']
+    refined_question = metadata['RefinedQuestion']
     topics = metadata['Topics']
     title = metadata['Title']
     keywords = metadata['Keywords']
@@ -247,7 +305,7 @@ def chat():
     )
 
     # Add user message to conversation
-    conversation.messages.append({'sender': 'user', 'content': user_msg})
+    conversation.messages.append(Message(sender='user', content=user_msg))
     conversation.save()
 
     # Get embeddings for the metadata
@@ -255,6 +313,7 @@ def chat():
     topics_embedding = Utils.get_embeddings(", ".join(topics))
     title_embedding = Utils.get_embeddings(title)
     keywords_embedding = Utils.get_embeddings(", ".join(keywords))
+    print("##### EMBEDDINGS DONE #####")
 
     # Query Pinecone for matches
     own_matches = {
@@ -269,6 +328,7 @@ def chat():
         'keywords': Utils.query_pinecone(assistant_id, keywords_embedding, 'supported', 'keywords'),
         'content': Utils.query_pinecone(assistant_id, refined_question_embedding, 'supported', 'text')
     }
+    print("##### PINECONE DONE #####")
 
     # Rank matches
     ranked_own_matches = Utils.rank_pinecone_matches(own_matches)
@@ -277,8 +337,19 @@ def chat():
     # Fetch original content from MongoDB
     def fetch_content(match, content_type):
         content_id, digest_id = match['content_id_digest_id'].split('__')
-        content = Content.objects(id=content_id).first()
-        digest = next((d for d in content.digests if str(d.id) == digest_id), None)
+        print(content_id, digest_id)
+        print(assistant.own_content, assistant.supporting_content)
+        if content_type == 'own':
+            content = next((c for c in assistant.own_content if c.id == content_id), None)
+        else:
+            content = next((c for c in assistant.supporting_content if c.id == content_id), None)
+        
+        if content:
+            digest = next((d for d in content.digests if str(d.id) == digest_id), None)
+        else:
+            digest = None
+        
+        print("##### FETCHED CONTENT #####")
         return content, digest
 
     own_context = []
@@ -286,13 +357,13 @@ def chat():
         content, digest = fetch_content(match, 'own')
         if i < 2:
             own_context.append({
-                'digest_text': digest.content,
-                'parent_long_summary': content.long_summary
+                'digest_text': digest.content or "",
+                'parent_long_summary': content.long_summary or ""
             })
         elif i < 5:
             own_context.append({
-                'digest_long_summary': digest.long_summary,
-                'parent_short_summary': content.short_summary
+                'digest_long_summary': digest.long_summary or "",
+                'parent_short_summary': content.short_summary or ""
             })
 
     supported_context = []
@@ -312,16 +383,16 @@ def chat():
 
     # Generate a response using OpenAI with context
     last_two_messages = conversation.messages[-2:] if len(conversation.messages) > 1 else []
+    print(last_two_messages, own_context, supported_context)
     response = Utils.generate_chat_response(user_message, conversation.conversation_summary, last_two_messages, own_context, supported_context)
-
+    print("##### RESPONSE DONE #####")
+    print(response)
     # Add assistant message to conversation
     assistant_msg = AssistantMessage(message=response, references=References(
-        title_matches=own_matches['title'],
-        topic_matches=own_matches['topics'],
-        keyword_matches=own_matches['keywords'],
-        content_matches=own_matches['content']
+        own=ranked_own_matches,
+        supporting=ranked_supported_matches
     ))
-    conversation.messages.append({'sender': 'assistant', 'content': assistant_msg})
+    conversation.messages.append(Message(sender='assistant', content=assistant_msg))
     conversation.save()
 
     # Update conversation summary
@@ -334,27 +405,54 @@ def chat():
         'references': {
             'own': ranked_own_matches,
             'supported': ranked_supported_matches
+        },
+        'conversation_id': conversation_id
+    })
+
+@app.route('/get_student_assistants', methods=['GET'])
+@token_required_student
+def get_student_assistants():
+    assistants = g.current_user.allowed_assistants
+    assistants_list = [{'id': assistant.id, 'subject': assistant.subject, 'class_name': assistant.class_name, 'teacher': assistant.teacher.name} for assistant in assistants]
+    return jsonify({'assistants': assistants_list})
+
+@app.route('/get_conversation/<conversation_id>', methods=['GET'])
+@token_required_student
+def get_conversation(conversation_id):
+    conversation = Conversation.objects(id=conversation_id, student=g.current_user).first()
+    if not conversation:
+        return jsonify({'error': 'Conversation not found'}), 404
+
+    messages = [
+        {
+            'sender': message.sender,
+            'content': message.content.message if message.sender == 'user' else message.content.message,
+            'references':  [ref for ref in message.content.references] if message.sender == 'assistant' else None
+        }
+        for message in conversation.messages
+    ]
+
+    # Find the last assistant message
+    last_assistant_message = (next((msg for msg in reversed(conversation.messages) if msg.sender == 'assistant'), None)).to_mongo().to_dict()
+
+    return jsonify({
+        'messages': messages,
+        'references': {
+            'own': last_assistant_message['content']['references']['own'] if last_assistant_message else [],
+            'supported': last_assistant_message['content']['references']['supporting'] if last_assistant_message else []
         }
     })
 
-# Route to get an assistant by ID
-@app.route('/get_assistant/<assistant_id>', methods=['GET'])
+# Route to get teacher info
+@app.route('/get_teacher_info', methods=['GET'])
 @token_required_teacher
-def get_assistant(assistant_id):
-    assistant = Assistant.objects(id=assistant_id, teacher=g.current_user).first()
-    if not assistant:
-        return jsonify({'error': 'Assistant not found'}), 404
-
-    assistant_data = {
-        'id': assistant.id,
-        'subject': assistant.subject,
-        'class_name': assistant.class_name,
-        'own_content': assistant.own_content,
-        'supporting_content': assistant.supporting_content,
-        'allowed_students': [str(student.id) for student in assistant.allowed_students]
+def get_teacher_info():
+    teacher = g.current_user
+    teacher_info = {
+        'name': teacher.name,
+        'profile_picture': teacher.profile_picture
     }
-
-    return jsonify({'assistant': assistant_data})
+    return jsonify({'teacher': teacher_info})
 
 # Run the Flask application
 if __name__ == '__main__':

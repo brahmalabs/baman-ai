@@ -9,7 +9,7 @@ flask-cors
 pytesseract
 pdf2image
 docx2txt
-whisper
+git+https://github.com/openai/whisper.git
 youtube_transcript_api
 vimeo_dl
 langchain 

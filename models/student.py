@@ -1,5 +1,5 @@
 from mongoengine import Document, StringField, DateTimeField, ListField, ReferenceField
-import datetime
+from datetime import datetime, UTC
 import uuid
 
 class Student(Document):
@@ -20,8 +20,8 @@ class Student(Document):
     grade = StringField()
     allowed_assistants = ListField(ReferenceField('Assistant'))
     
-    created_at = DateTimeField(default=datetime.datetime.utcnow)
-    last_login = DateTimeField(default=datetime.datetime.utcnow)
+    created_at = DateTimeField(default=datetime.now(UTC))
+    last_login = DateTimeField(default=datetime.now(UTC))
 
     meta = {
         'indexes': [
@@ -35,5 +35,5 @@ class Student(Document):
     }
 
     def update_last_login(self):
-        self.last_login = datetime.datetime.utcnow()
+        self.last_login = datetime.now(UTC)
         self.save()
