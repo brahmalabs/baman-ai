@@ -496,6 +496,61 @@ def get_teacher_info():
     }
     return jsonify({'teacher': teacher_info})
 
+# Route to edit an assistant
+@app.route('/edit_assistant/<assistant_id>', methods=['POST'])
+@token_required_teacher
+def edit_assistant(assistant_id):
+    data = request.json
+    subject = data.get('subject')
+    class_name = data.get('class_name')
+    about = data.get('about')
+    profile_picture = data.get('profile_picture')
+
+    assistant = Assistant.objects(id=assistant_id, teacher=g.current_user).first()
+    if not assistant:
+        return jsonify({'error': 'Assistant not found'}), 404
+
+    if subject:
+        assistant.subject = subject
+    if class_name:
+        assistant.class_name = class_name
+    if about:
+        assistant.about = about
+    if profile_picture:
+        assistant.profile_picture = profile_picture
+
+    assistant.save()
+    return jsonify({'message': 'Assistant updated successfully'})
+
+@app.route('/delete_file', methods=['POST'])
+@token_required_teacher
+def delete_file():
+    data = request.json
+    assistant_id = data.get('assistant_id')
+    content_id = data.get('content_id')
+    content_type = data.get('content_type')
+
+    if not assistant_id or not content_id or not content_type:
+        return jsonify({'error': 'Assistant ID, content ID, and content type are required'}), 400
+
+    assistant = Assistant.objects(id=assistant_id).first()
+    if not assistant:
+        return jsonify({'error': 'Assistant not found'}), 404
+
+    if content_type == 'own':
+        content_list = assistant.own_content
+    else:
+        content_list = assistant.supporting_content
+
+    content_to_delete = next((content for content in content_list if content.id == content_id), None)
+    if not content_to_delete:
+        return jsonify({'error': 'Content not found'}), 404
+
+    content_list.remove(content_to_delete)
+    assistant.save()
+
+    return jsonify({'message': 'Content deleted successfully'})
+
 # Run the Flask application
 if __name__ == '__main__':
     app.run(debug=True)
