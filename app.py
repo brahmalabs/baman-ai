@@ -263,6 +263,29 @@ def get_assistant(assistant_id):
 
     return jsonify({'assistant': assistant_data})
 
+@app.route('/get_student_assistant/<assistant_id>', methods=['GET'])
+@token_required_student
+def get_student_assistant(assistant_id):
+    assistant = Assistant.objects(id=assistant_id).first()
+    student = Student.objects(id=g.current_user.id).first()
+    
+    if not assistant:
+        return jsonify({'error': 'Assistant not found'}), 404
+    if student not in assistant.allowed_students:
+        return jsonify({'error': 'You are not allowed to access this assistant'}), 403
+
+    assistant_data = {
+        'id': assistant.id,
+        'subject': assistant.subject,
+        'class_name': assistant.class_name,
+        'profile_picture': assistant.profile_picture,
+        'about': assistant.about,
+        'created_at': assistant.created_at,
+        'updated_at': assistant.updated_at,
+        'own_content': [content.to_mongo().to_dict() for content in assistant.own_content],
+        'supporting_content': [content.to_mongo().to_dict() for content in assistant.supporting_content],
+    }
+    return jsonify(assistant_data)
 
 # Route for student verification
 @app.route('/verify-student', methods=['POST'])
@@ -455,8 +478,21 @@ def chat():
 @token_required_student
 def get_student_assistants():
     assistants = g.current_user.allowed_assistants
-    assistants_list = [{'id': assistant.id, 'subject': assistant.subject, 'class_name': assistant.class_name, 'teacher': assistant.teacher.name} for assistant in assistants]
+    assistants_list = [{'id': assistant.id, 'subject': assistant.subject, 'class_name': assistant.class_name, 'teacher': assistant.teacher.name, 'profile_picture': assistant.profile_picture, 'about': assistant.about} for assistant in assistants]
     return jsonify({'assistants': assistants_list})
+
+@app.route('/get_conversations/<assistant_id>', methods=['GET'])
+@token_required_student
+def get_conversations(assistant_id):
+    conversations = Conversation.objects(student=g.current_user, assistant=assistant_id)
+    conversation_list = [
+        {
+            'id': conversation.id,
+            'title': conversation.title or conversation.messages[0].content.title or "Untitled Conversation"
+        }
+        for conversation in conversations
+    ]
+    return jsonify({'conversations': conversation_list})
 
 @app.route('/get_conversation/<conversation_id>', methods=['GET'])
 @token_required_student
@@ -495,6 +531,17 @@ def get_teacher_info():
         'profile_picture': teacher.profile_picture
     }
     return jsonify({'teacher': teacher_info})
+
+@app.route('/get_student_info', methods=['GET'])
+@token_required_student
+def get_student_info():
+    student = g.current_user
+    student_info = {
+        'id': student.id,
+        'name': student.name,
+        'profile_picture': student.profile_picture
+    }
+    return jsonify({'student': student_info})
 
 # Route to edit an assistant
 @app.route('/edit_assistant/<assistant_id>', methods=['POST'])
