@@ -17,6 +17,7 @@ openai
 tiktoken
 pinecone
 langchain-community
+gunicorn
 
 
 

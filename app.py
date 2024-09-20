@@ -88,8 +88,8 @@ def create_channel():
     
     match name:
         case "telegram":
-            if not profile.get('chat_id') or not profile.get('api_key'):
-                return jsonify({'error': 'Chat ID and API key are required for Telegram'}), 400
+            if not profile.get('username') or not profile.get('access_key'):
+                return jsonify({'error': 'Username and access key are required for Telegram'}), 400
         case "whatsapp":
             if not profile.get('phone_number') or not profile.get('app_id') or not profile.get('app_secret') or not profile.get('access_token'):
                 return jsonify({'error': 'Phone number, app ID, app secret and access token are required for WhatsApp'}), 400
@@ -102,29 +102,74 @@ def create_channel():
         case _:
             return jsonify({'error': 'Invalid channel name'}), 400
     
-    profile['is_connected'] = True
-    teacher_channel = Channel(
-        name=name,
-        profile=profile
-    )
-    teacher_channel.save()
     teacher = g.current_user
+    profile['is_connected'] = True
+    
+    channel = Channel(
+        name=name,
+        profile=profile,
+        teacher=teacher
+    )
+    channel.save()
 
     # Add the new channel to the appropriate list in the Channels embedded document
     if name == "telegram":
-        teacher.channels.telegram.append(teacher_channel)
+        teacher.channels.telegram.append(channel)
+        Utils.connect_tg_webhook(profile.get('username'), profile.get('access_key'), channel.id)
     elif name == "whatsapp":
-        teacher.channels.whatsapp.append(teacher_channel)
+        teacher.channels.whatsapp.append(channel)
     elif name == "facebook":
-        teacher.channels.facebook.append(teacher_channel)
+        teacher.channels.facebook.append(channel)
     elif name == "instagram":
-        teacher.channels.instagram.append(teacher_channel)
+        teacher.channels.instagram.append(channel)
 
     teacher.save()
 
-    return jsonify({'message': 'Channel created successfully', 'channel_id': teacher_channel.id})
+    return jsonify({'message': 'Channel created successfully', 'channel_id': channel.id})
         
-        
+
+@app.route('/edit_channel', methods=['POST'])
+@token_required_teacher
+def edit_channel():
+    data = request.json
+    name = data.get('name')
+    profile = data.get('profile')
+    id = data.get('id')
+
+    if not name or not profile:
+        return jsonify({'error': 'Name and profile are required'}), 400
+
+    match name:
+        case "telegram":
+            if not profile.get('username') or not profile.get('access_key'):
+                return jsonify({'error': 'Username and access key are required for Telegram'}), 400
+        case "whatsapp":
+            if not profile.get('phone_number') or not profile.get('app_id') or not profile.get('app_secret') or not profile.get('access_token'):
+                return jsonify({'error': 'Phone number, app ID, app secret and access token are required for WhatsApp'}), 400
+        case "facebook":
+            if not profile.get('page_id') or not profile.get('access_token'):
+                return jsonify({'error': 'Page ID and access token are required for Facebook'}), 400
+        case "instagram":
+            if not profile.get('username') or not profile.get('access_token'):
+                return jsonify({'error': 'Username and access token are required for Instagram'}), 400
+        case _:
+            return jsonify({'error': 'Invalid channel name'}), 400
+
+    teacher = g.current_user
+    channel = Channel.objects(name=name, id=id, teacher=teacher).first()
+    profile['is_connected'] = True
+
+    if not channel:
+        return jsonify({'error': 'Channel not found'}), 404
+
+    channel.profile = profile
+    channel.updated_at = datetime.now(UTC)
+    channel.save()
+
+    if name == "telegram":
+        Utils.connect_tg_webhook(profile.get('username'), profile.get('access_key'), channel.id)
+
+    return jsonify({'message': 'Channel updated successfully'})        
 
 
 # Route to create an assistant
@@ -152,6 +197,8 @@ def create_assistant():
             channel = Channel.objects(id=channel_id).first()
             if channel:
                 assistant.connected_channels.append(channel)
+                channel.assistants.append(assistant)
+                channel.save()
     assistant.created_at = datetime.now(UTC)
     assistant.save()
 
@@ -317,7 +364,7 @@ def get_assistant(assistant_id):
         'updated_at': assistant.updated_at,
         'own_content': [content.to_mongo().to_dict() for content in assistant.own_content],
         'supporting_content': [content.to_mongo().to_dict() for content in assistant.supporting_content],
-        'connected_channels': [channel.to_mongo().to_dict() for channel in assistant.connected_channels],
+        'connected_channels': [{'id': channel.id, 'name': channel.name, 'profile': channel.profile} for channel in assistant.connected_channels],
         'allowed_students': [str(student.id) for student in assistant.allowed_students]
     }
 
@@ -389,7 +436,7 @@ def verify_student():
 def fetch_content(match, content_type, assistant):
     content_id, digest_id = match['content_id_digest_id'].split('__')
     print(content_id, digest_id)
-    print(assistant.own_content, assistant.supporting_content)
+    # print(assistant.own_content, assistant.supporting_content)
     if content_type == 'own':
         content = next((c for c in assistant.own_content if c.id == content_id), None)
     else:
@@ -432,6 +479,17 @@ def chat():
     if not assistant:
         return jsonify({'error': 'Invalid assistant_id'}), 400
     
+    response, ranked_own_content, ranked_supported_content = process_chat(user_message, assistant, conversation)
+    return jsonify({
+        'message': response,
+        'references': {
+            'own': ranked_own_content,
+            'supported': ranked_supported_content
+        },
+        'conversation_id': conversation_id
+    })
+
+def process_chat(user_message, assistant, conversation):
     # Extract metadata from the current message using Utils
     metadata = Utils.extract_chat_metadata(user_message)
     refined_question = metadata['RefinedQuestion']
@@ -450,8 +508,12 @@ def chat():
 
     # Add user message to conversation
     conversation.messages.append(Message(sender='user', content=user_msg))
-    conversation.save()
+    # conversation.save()
 
+    print("##### METADATA DONE #####")
+    print(refined_question, topics, title, keywords)
+    if not refined_question or not topics or not title or not keywords:
+        return "Hello! I'm your AI assistant for your teacher. How can I help you today?", [], []
     # Get embeddings for the metadata
     refined_question_embedding = Utils.get_embeddings(refined_question)
     topics_embedding = Utils.get_embeddings(", ".join(topics))
@@ -461,16 +523,16 @@ def chat():
 
     # Query Pinecone for matches
     own_matches = {
-        'title': Utils.query_pinecone(assistant_id, title_embedding, 'own', 'title'),
-        'topics': Utils.query_pinecone(assistant_id, topics_embedding, 'own', 'topics'),
-        'keywords': Utils.query_pinecone(assistant_id, keywords_embedding, 'own', 'keywords'),
-        'content': Utils.query_pinecone(assistant_id, refined_question_embedding, 'own', 'text')
+        'title': Utils.query_pinecone(assistant.id, title_embedding, 'own', 'title'),
+        'topics': Utils.query_pinecone(assistant.id, topics_embedding, 'own', 'topics'),
+        'keywords': Utils.query_pinecone(assistant.id, keywords_embedding, 'own', 'keywords'),
+        'content': Utils.query_pinecone(assistant.id, refined_question_embedding, 'own', 'text')
     }
     supported_matches = {
-        'title': Utils.query_pinecone(assistant_id, title_embedding, 'supported', 'title'),
-        'topics': Utils.query_pinecone(assistant_id, topics_embedding, 'supported', 'topics'),
-        'keywords': Utils.query_pinecone(assistant_id, keywords_embedding, 'supported', 'keywords'),
-        'content': Utils.query_pinecone(assistant_id, refined_question_embedding, 'supported', 'text')
+        'title': Utils.query_pinecone(assistant.id, title_embedding, 'supported', 'title'),
+        'topics': Utils.query_pinecone(assistant.id, topics_embedding, 'supported', 'topics'),
+        'keywords': Utils.query_pinecone(assistant.id, keywords_embedding, 'supported', 'keywords'),
+        'content': Utils.query_pinecone(assistant.id, refined_question_embedding, 'supported', 'text')
     }
     print("##### PINECONE DONE #####")
 
@@ -511,7 +573,7 @@ def chat():
 
     # Generate a response using OpenAI with context
     last_two_messages = conversation.messages[-2:] if len(conversation.messages) > 1 else []
-    print(last_two_messages, own_context, supported_context)
+    # print(last_two_messages, own_context, supported_context)
     response = Utils.generate_chat_response(user_message, conversation.conversation_summary, last_two_messages, own_context, supported_context)
     print("##### RESPONSE DONE #####")
     print(response)
@@ -521,7 +583,7 @@ def chat():
         supporting=ranked_supported_matches
     ))
     conversation.messages.append(Message(sender='assistant', content=assistant_msg))
-    conversation.save()
+    # conversation.save()
 
     # Update conversation summary
     new_summary = Utils.update_conversation_summary(conversation.conversation_summary or "", user_message, response)
@@ -542,14 +604,7 @@ def chat():
         }
         for content, digest in (fetch_content(match, 'supported', assistant) for match in ranked_supported_matches) if content
     ]
-    return jsonify({
-        'message': response,
-        'references': {
-            'own': ranked_own_content,
-            'supported': ranked_supported_content
-        },
-        'conversation_id': conversation_id
-    })
+    return response, ranked_own_content, ranked_supported_content
 
 @app.route('/get_student_assistants', methods=['GET'])
 @token_required_student
@@ -624,10 +679,22 @@ def get_teacher_info():
         'name': teacher.name,
         'profile_picture': teacher.profile_picture,
         'channels': {
-            'whatsapp': teacher.channels.whatsapp[0].to_mongo().to_dict() if teacher.channels.whatsapp else None,
-            'telegram': teacher.channels.telegram[0].to_mongo().to_dict() if teacher.channels.telegram else None,
-            'facebook': teacher.channels.facebook[0].to_mongo().to_dict() if teacher.channels.facebook else None,
-            'instagram': teacher.channels.instagram[0].to_mongo().to_dict() if teacher.channels.instagram else None
+            'whatsapp': {
+                'profile': teacher.channels.whatsapp[0].profile,
+                'id': str(teacher.channels.whatsapp[0].id)
+            } if teacher.channels.whatsapp else None,
+            'telegram': {
+                'profile': teacher.channels.telegram[0].profile,
+                'id': str(teacher.channels.telegram[0].id)
+            } if teacher.channels.telegram else None,
+            'facebook': {
+                'profile': teacher.channels.facebook[0].profile,
+                'id': str(teacher.channels.facebook[0].id)
+            } if teacher.channels.facebook else None,
+            'instagram': {
+                'profile': teacher.channels.instagram[0].profile,
+                'id': str(teacher.channels.instagram[0].id)
+            } if teacher.channels.instagram else None
         }
     }
     return jsonify({'teacher': teacher_info})
@@ -639,7 +706,11 @@ def get_student_info():
     student_info = {
         'id': student.id,
         'name': student.name,
-        'profile_picture': student.profile_picture
+        'profile_picture': student.profile_picture,
+        'wa_number': student.wa_number or None,
+        'tg_handle': student.tg_handle or None,
+        'ig_handle': student.ig_handle or None,
+        'fb_handle': student.fb_handle or None
     }
     return jsonify({'student': student_info})
 
@@ -668,11 +739,15 @@ def edit_assistant(assistant_id):
         assistant.profile_picture = profile_picture
     assistant.connected_channels = []
     if connected_channels:
-        print(connected_channels, 'connected_channels')
+        print(connected_channels)
         for channel_id in connected_channels:
             channel = Channel.objects(id=channel_id).first()
             if channel:
                 assistant.connected_channels.append(channel)
+                if assistant not in channel.assistants:
+                    channel.assistants.append(assistant)
+                    channel.save()
+            
 
     assistant.save()
     return jsonify({'message': 'Assistant updated successfully'})
@@ -708,47 +783,156 @@ def delete_file():
 
 @app.route('/wa-webhook/<wa_id>', methods=['GET', 'POST'])
 def wa_webhook(wa_id):
-    if request.method == 'GET':
-        challenge = request.args.get('hub.challenge')
-        print(challenge)
-        print(wa_id)
-        return challenge, 200
-    elif request.method == 'POST':
-        # verify the token
-        # token = request.args.get('hub.verify_token')
-        # print(token)
-        # if token == 'my-secret-token':
-        #     challenge = request.args.get('hub.challenge')
-        #     return challenge, 200
-        # else:
-        #     return 'Invalid token', 403
-        
-        data = request.json
-        # print(data)
+    try:
+        if request.method == 'GET':
+            challenge = request.args.get('hub.challenge')
+            print(challenge)
+            print(wa_id)
+            return challenge, 200
+        elif request.method == 'POST':
+            # verify the token
+            # token = request.args.get('hub.verify_token')
+            # print(token)
+            # if token == 'my-secret-token':
+            #     challenge = request.args.get('hub.challenge')
+            #     return challenge, 200
+            # else:
+            #     return 'Invalid token', 403
+            
+            data = request.json
+            # print(data)
 
-        if not data or not data.get('entry') or not data.get('entry')[0].get('changes') or not data.get('entry')[0].get('changes')[0].get('value') or not data.get('entry')[0].get('changes')[0].get('value').get('contacts') or not data.get('entry')[0].get('changes')[0].get('value').get('contacts')[0].get('profile') or not data.get('entry')[0].get('changes')[0].get('value').get('contacts')[0].get('profile').get('name') or not data.get('entry')[0].get('changes')[0].get('value').get('metadata') or not data.get('entry')[0].get('changes')[0].get('value').get('metadata').get('phone_number_id') or not data.get('entry')[0].get('changes')[0].get('value').get('messages') or not data.get('entry')[0].get('changes')[0].get('value').get('messages')[0].get('text'):
+            if not data or not data.get('entry') or not data.get('entry')[0].get('changes') or not data.get('entry')[0].get('changes')[0].get('value') or not data.get('entry')[0].get('changes')[0].get('value').get('contacts') or not data.get('entry')[0].get('changes')[0].get('value').get('contacts')[0].get('profile') or not data.get('entry')[0].get('changes')[0].get('value').get('contacts')[0].get('profile').get('name') or not data.get('entry')[0].get('changes')[0].get('value').get('metadata') or not data.get('entry')[0].get('changes')[0].get('value').get('metadata').get('phone_number_id') or not data.get('entry')[0].get('changes')[0].get('value').get('messages') or not data.get('entry')[0].get('changes')[0].get('value').get('messages')[0].get('text'):
+                return 'ok', 200
+            
+            display_phone_number = data.get('entry')[0].get('changes')[0].get('value').get('metadata').get('display_phone_number')
+            print(display_phone_number)
+
+            channel = Channel.objects(name="whatsapp", profile__phone_number=display_phone_number).first()
+            assistant = channel.assistants[0] if channel and channel.assistants else None
+            if not assistant:
+                return 'ok', 200
+            
+
+            phone_number = data.get('entry')[0].get('changes')[0].get('value').get('contacts')[0].get('wa_id') or None
+            message = data.get('entry')[0].get('changes')[0].get('value').get('messages')[0].get('text').get('body') or None
+            print(phone_number, message)
+            student = Student.objects(wa_number=phone_number).first()
+            if not student:
+                print("Student not found")
+                return 'ok', 200
+            if not student in assistant.allowed_students or not assistant in student.allowed_assistants:
+                print("Student not allowed")
+                return 'ok', 200
+            
+            conversation = Conversation.objects(student=student, assistant=assistant).first()
+            if not conversation:
+                conversation = Conversation(student=student, assistant=assistant)
+                conversation.save()
+
+            # get user name
+            user_name = data.get('entry')[0].get('changes')[0].get('value').get('contacts')[0].get('profile').get('name') or None
+            print(user_name)
+
+            print("Here...")
+            
+            # Send a message to the user
+            sender_id = data.get('entry')[0].get('changes')[0].get('value').get('metadata').get('phone_number_id') or None
+            sender_access_token = channel.profile.get('access_token') if channel.profile.get('access_token') else None
+            if not sender_id or not sender_access_token:
+                print("Sender ID or Sender Access Token not found")
+                return 'ok', 200
+
+
+            print(sender_id, sender_access_token, phone_number, message)
+            res_message, ranked_own_content, ranked_supported_content = process_chat(message, assistant, conversation)
+            if ranked_own_content or ranked_supported_content:
+                reply = '*Answer :* ' + res_message + '\n\n*Teacher References :* \n'
+                for i, content in enumerate(ranked_own_content[:4]):
+                    reply += f'{content.get("content").get("fileUrl")}\n'
+                reply += '\n\n*Supporting References :* \n'
+                for i, content in enumerate(ranked_supported_content[:4]):
+                    reply += f'{content.get("content").get("fileUrl")}\n'
+            else:
+                reply = res_message or "Sorry, I'm not able to answer that."
+
+            if sender_id and sender_access_token and phone_number and message:
+                Utils.send_wa_message(sender_id, phone_number, reply, sender_access_token)
+                print("Message sent")
             return 'ok', 200
-        
-        display_phone_number = data.get('entry')[0].get('changes')[0].get('value').get('metadata').get('display_phone_number')
-        print(display_phone_number)
-
-        phone_number = data.get('entry')[0].get('changes')[0].get('value').get('contacts')[0].get('wa_id') or None
-        message = data.get('entry')[0].get('changes')[0].get('value').get('messages')[0].get('text').get('body') or None
-        print(phone_number, message)
-
-        # get user name
-        user_name = data.get('entry')[0].get('changes')[0].get('value').get('contacts')[0].get('profile').get('name') or None
-        print(user_name)
-        
-        # Send a message to the user
-        sender_id = data.get('entry')[0].get('changes')[0].get('value').get('metadata').get('phone_number_id') or None
-        sender_access_token = os.getenv('WA_ACCESS_TOKEN') or None
-        print(sender_id, sender_access_token, phone_number, message)
-        message = "Hello " + user_name + "! How are you ? \nFancy watching a video ? \n" + "https://www.youtube.com/shorts/LBWJI2v7Bik?app=desktop"
-        if sender_id and sender_access_token and phone_number and message:
-            Utils.send_wa_message(sender_id, phone_number, message, sender_access_token)
-            print("Message sent")
+    except Exception as e:
+        print(e)
         return 'ok', 200
+    
+@app.route('/telegram-webhook/<channel_id>', methods=['GET', 'POST'])
+def telegram_webhook(channel_id):
+    data = request.json
+    channel = Channel.objects(id=channel_id).first()
+    if not channel:
+        print("Channel not found")
+        return 'ok', 200
+    assistant = channel.assistants[0] if channel.assistants else None
+    if not assistant:
+        print("Assistant not found")
+        return 'ok', 200
+    student = Student.objects(tg_handle=data.get('message').get('from').get('username')).first()
+    if not student:
+        print("Student not found")
+        return 'ok', 200
+    if not student in assistant.allowed_students or not assistant in student.allowed_assistants:
+        print("Student not allowed")
+        return 'ok', 200
+    
+    conversation = Conversation.objects(student=student, assistant=assistant).first()
+    if not conversation:
+        conversation = Conversation(student=student, assistant=assistant)
+        conversation.save()
+    
+    message = data.get('message').get('text')
+    chat_id = data.get('message').get('chat').get('id')
+    print(message)
+    res_message, ranked_own_content, ranked_supported_content = process_chat(message, assistant, conversation)
+    print(res_message, ranked_own_content, ranked_supported_content)
+    
+    if ranked_own_content or ranked_supported_content:
+        reply = '*Answer :* ' + res_message + '\n\n*Teacher References :* \n'
+        for i, content in enumerate(ranked_own_content[:4]):
+            reply += f'{content.get("content").get("fileUrl")}\n'
+        reply += '\n\n*Supporting References :* \n'
+        for i, content in enumerate(ranked_supported_content[:4]):
+            reply += f'{content.get("content").get("fileUrl")}\n'
+    else:
+        reply = res_message or "Sorry, I'm not able to answer that."
+
+    if message:
+        Utils.send_tg_message(channel.profile.get('access_key'), chat_id, reply)
+        print("Message sent")
+    return 'ok', 200
+
+@app.route('/update_student_wa', methods=['POST'])
+@token_required_student
+def update_student_wa():
+    data = request.json
+    wa_number = data.get('wa_number')
+    tg_handle = data.get('tg_handle')
+    ig_handle = data.get('ig_handle')
+    fb_handle = data.get('fb_handle')
+
+    
+    student = g.current_user
+    if wa_number:
+        student.wa_number = wa_number
+    if tg_handle:
+        student.tg_handle = tg_handle
+    if ig_handle:
+        student.ig_handle = ig_handle
+    if fb_handle:
+        student.fb_handle = fb_handle
+    
+    student.save()
+
+    return jsonify({'message': 'Student updated successfully'})
+
 
 # Run the Flask application
 if __name__ == '__main__':

@@ -374,3 +374,24 @@ class Utils:
         response = requests.post(url, headers=headers, data=json.dumps(data))
         print(response.json())
         return response.json()
+    
+    @staticmethod
+    def connect_tg_webhook(username: str, access_token: str, channel_id: str):
+        url = f"https://api.telegram.org/bot{access_token}/setWebhook"
+        params = {
+            "url": f"{os.getenv('APP_URL')}/telegram-webhook/{channel_id}"
+        }
+        response = requests.post(url, data=params)
+        print(response.json())
+        return response.json()
+    
+    @staticmethod
+    def send_tg_message(access_key: str, chat_id: str, message: str):
+        url = f"https://api.telegram.org/bot{access_key}/sendMessage"
+        params = {
+            "chat_id": chat_id,
+            "text": message
+        }
+        response = requests.post(url, data=params)
+        print(response.json())
+        return response.json()

@@ -19,6 +19,11 @@ class Student(Document):
     school = StringField()
     grade = StringField()
     allowed_assistants = ListField(ReferenceField('Assistant'))
+
+    wa_number = StringField()
+    tg_handle = StringField()
+    ig_handle = StringField()
+    fb_handle = StringField()
     
     created_at = DateTimeField(default=datetime.now(UTC))
     last_login = DateTimeField(default=datetime.now(UTC))
