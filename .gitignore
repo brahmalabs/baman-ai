@@ -5,3 +5,4 @@ frontend/yarn.lock
 .DS_Store
 .env
 frontend/.env
+__pycache__
