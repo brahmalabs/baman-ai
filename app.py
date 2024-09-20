@@ -23,7 +23,7 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
 
 # Enable CORS for requests from http://localhost:3000
-CORS(app, resources={r"*": {"origins": "http://localhost:3000,https://baman.brahma-labs.com"}})
+CORS(app)
 
 connect(host=os.getenv('MONGO_URI'))
 
