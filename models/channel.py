@@ -1,5 +1,5 @@
 from mongoengine import Document, StringField, DateTimeField, DictField, ReferenceField, ListField
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 import uuid
 
 class Channel(Document):
@@ -8,8 +8,8 @@ class Channel(Document):
     profile = DictField(required=True)
     teacher = ReferenceField('Teacher', required=True)
     assistants = ListField(ReferenceField('Assistant', required=False))
-    created_at = DateTimeField(default=datetime.now(UTC))
-    updated_at = DateTimeField(default=datetime.now(UTC))
+    created_at = DateTimeField(default=datetime.now(timezone.utc))
+    updated_at = DateTimeField(default=datetime.now(timezone.utc))
     meta = {
         'indexes': [
           

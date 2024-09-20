@@ -1,7 +1,7 @@
 from mongoengine import connect
 from flask import Flask, jsonify, request, g
 import jwt
-from datetime import datetime, UTC, timedelta
+from datetime import datetime, timedelta, timezone
 from models.teacher import Teacher
 from middlewares.authentication import token_required_teacher, token_required_student
 from dotenv import load_dotenv
@@ -17,7 +17,7 @@ from models.channel import Channel
 from models.teacher import Channels
 
 
-
+UTC = timezone.utc
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')

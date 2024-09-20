@@ -1,7 +1,7 @@
 from mongoengine import Document, ReferenceField, StringField, ListField, EmbeddedDocument, EmbeddedDocumentListField, DateTimeField
 from models.teacher import Teacher
 import uuid
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 
 
 class DigestedContent(EmbeddedDocument):
@@ -37,8 +37,8 @@ class Assistant(Document):
     supporting_content = EmbeddedDocumentListField(Content)
     allowed_students = ListField(ReferenceField('Student'))
     connected_channels = ListField(ReferenceField('Channel'))
-    created_at = DateTimeField(default=datetime.now(UTC))
-    updated_at = DateTimeField(default=datetime.now(UTC))
+    created_at = DateTimeField(default=datetime.now(timezone.utc))
+    updated_at = DateTimeField(default=datetime.now(timezone.utc))
 
     meta = {
         'indexes': [
@@ -47,6 +47,6 @@ class Assistant(Document):
     }
 
     def save(self, *args, **kwargs):
-        self.updated_at = datetime.now(UTC)
+        self.updated_at = datetime.now(timezone.utc)
         return super(Assistant, self).save(*args, **kwargs)
     

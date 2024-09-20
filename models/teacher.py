@@ -1,5 +1,5 @@
 from mongoengine import Document, StringField, DateTimeField, ReferenceField, ListField, EmbeddedDocumentField, EmbeddedDocument
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from models.channel import Channel
 
 class Channels(EmbeddedDocument):
@@ -14,8 +14,8 @@ class Teacher(Document):
     name = StringField(required=True)
     profile_picture = StringField()
     channels = EmbeddedDocumentField(Channels, default=Channels)
-    created_at = DateTimeField(default=datetime.now(UTC))
-    last_login = DateTimeField(default=datetime.now(UTC))
+    created_at = DateTimeField(default=datetime.now(timezone.utc))
+    last_login = DateTimeField(default=datetime.now(timezone.utc))
 
     meta = {
         'indexes': [
