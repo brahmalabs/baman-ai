@@ -12,12 +12,9 @@ docx2txt
 git+https://github.com/openai/whisper.git
 youtube_transcript_api
 vimeo_dl
-langchain 
-openai 
+langchain
+openai
 tiktoken
 pinecone
 langchain-community
 gunicorn
-
-
-
