@@ -356,3 +356,21 @@ class Utils:
         ranked_matches = [{'content_id_digest_id': k, 'weighted_score': v} for k, v in sorted_matches]
 
         return ranked_matches
+    
+    @staticmethod
+    def send_wa_message(sender_id: str, phone_number: str, message: str, sender_access_token: str, type: str = "text", media_url: str = None, caption: str = None):
+        url = f"https://graph.facebook.com/v20.0/{sender_id}/messages"
+        headers = {
+            "Authorization": f"Bearer {sender_access_token}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "messaging_product": "whatsapp",
+            "to": phone_number,
+            "type": type,
+            f"{type}": {"body": message, "preview_url": False} if type == "text" else {"link": media_url, "caption": caption or "Hello"}
+        }
+        print(data)
+        response = requests.post(url, headers=headers, data=json.dumps(data))
+        print(response.json())
+        return response.json()

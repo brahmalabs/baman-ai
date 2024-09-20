@@ -36,6 +36,7 @@ class Assistant(Document):
     own_content = EmbeddedDocumentListField(Content)
     supporting_content = EmbeddedDocumentListField(Content)
     allowed_students = ListField(ReferenceField('Student'))
+    connected_channels = ListField(ReferenceField('Channel'))
     created_at = DateTimeField(default=datetime.now(UTC))
     updated_at = DateTimeField(default=datetime.now(UTC))
 
