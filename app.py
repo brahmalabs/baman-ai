@@ -86,21 +86,20 @@ def create_channel():
     if not name or not profile:
         return jsonify({'error': 'Name and profile are required'}), 400
     
-    match name:
-        case "telegram":
-            if not profile.get('username') or not profile.get('access_key'):
-                return jsonify({'error': 'Username and access key are required for Telegram'}), 400
-        case "whatsapp":
-            if not profile.get('phone_number') or not profile.get('app_id') or not profile.get('app_secret') or not profile.get('access_token'):
-                return jsonify({'error': 'Phone number, app ID, app secret and access token are required for WhatsApp'}), 400
-        case "facebook":
-            if not profile.get('page_id') or not profile.get('access_token'):
-                return jsonify({'error': 'Page ID and access token are required for Facebook'}), 400
-        case "instagram":
-            if not profile.get('username') or not profile.get('access_token'):
-                return jsonify({'error': 'Username and access token are required for Instagram'}), 400
-        case _:
-            return jsonify({'error': 'Invalid channel name'}), 400
+    if name == "telegram":
+        if not profile.get('username') or not profile.get('access_key'):
+            return jsonify({'error': 'Username and access key are required for Telegram'}), 400
+    elif name == "whatsapp":
+        if not profile.get('phone_number') or not profile.get('app_id') or not profile.get('app_secret') or not profile.get('access_token'):
+            return jsonify({'error': 'Phone number, app ID, app secret and access token are required for WhatsApp'}), 400
+    elif name == "facebook":
+        if not profile.get('page_id') or not profile.get('access_token'):
+            return jsonify({'error': 'Page ID and access token are required for Facebook'}), 400
+    elif name == "instagram":
+        if not profile.get('username') or not profile.get('access_token'):
+            return jsonify({'error': 'Username and access token are required for Instagram'}), 400
+    else:
+        return jsonify({'error': 'Invalid channel name'}), 400
     
     teacher = g.current_user
     profile['is_connected'] = True
@@ -139,21 +138,20 @@ def edit_channel():
     if not name or not profile:
         return jsonify({'error': 'Name and profile are required'}), 400
 
-    match name:
-        case "telegram":
-            if not profile.get('username') or not profile.get('access_key'):
-                return jsonify({'error': 'Username and access key are required for Telegram'}), 400
-        case "whatsapp":
-            if not profile.get('phone_number') or not profile.get('app_id') or not profile.get('app_secret') or not profile.get('access_token'):
-                return jsonify({'error': 'Phone number, app ID, app secret and access token are required for WhatsApp'}), 400
-        case "facebook":
-            if not profile.get('page_id') or not profile.get('access_token'):
-                return jsonify({'error': 'Page ID and access token are required for Facebook'}), 400
-        case "instagram":
-            if not profile.get('username') or not profile.get('access_token'):
-                return jsonify({'error': 'Username and access token are required for Instagram'}), 400
-        case _:
-            return jsonify({'error': 'Invalid channel name'}), 400
+    if name == "telegram":
+        if not profile.get('username') or not profile.get('access_key'):
+            return jsonify({'error': 'Username and access key are required for Telegram'}), 400
+    elif name == "whatsapp":
+        if not profile.get('phone_number') or not profile.get('app_id') or not profile.get('app_secret') or not profile.get('access_token'):
+            return jsonify({'error': 'Phone number, app ID, app secret and access token are required for WhatsApp'}), 400
+    elif name == "facebook":
+        if not profile.get('page_id') or not profile.get('access_token'):
+            return jsonify({'error': 'Page ID and access token are required for Facebook'}), 400
+    elif name == "instagram":
+        if not profile.get('username') or not profile.get('access_token'):
+            return jsonify({'error': 'Username and access token are required for Instagram'}), 400
+    else:
+        return jsonify({'error': 'Invalid channel name'}), 400
 
     teacher = g.current_user
     channel = Channel.objects(name=name, id=id, teacher=teacher).first()
