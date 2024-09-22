@@ -264,7 +264,8 @@ class Utils:
         prompt = PromptTemplate(
             input_variables=["user_message", "conversation_summary", "last_two_messages", "context"],
             template="""
-            Given the following conversation summary, the last two messages, and the context from relevant content, generate a response to the user's message. Adapt the response fully according to the language, persona, and tonality of the original texts in own_content.
+            Given the following conversation summary, the last two messages, and the context from relevant content, generate a response to the user's message. Adapt the tone and language of the response fully according to the language, persona, and tonality of the original texts in own_content.
+            The response should be consistent with the conversation summary and the last two messages. Do not reference the context in your response (though you can ask the user to read the context if they want more information, but never use the word 'context'). Write a accurate response as if you are directly talking to the user. Also the user is a student, so your answers should be such that it is easy for them to understand and also motiviating for them to study more.
 
             Conversation Summary: {conversation_summary}
             Last Two Messages: {last_two_messages}

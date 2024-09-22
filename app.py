@@ -511,6 +511,8 @@ def process_chat(user_message, assistant, conversation):
     print("##### METADATA DONE #####")
     print(refined_question, topics, title, keywords)
     if not refined_question or not topics or not title or not keywords:
+        conversation.conversation_summary = "Hello! I'm your AI assistant for your teacher. How can I help you today?"
+        conversation.save()
         return "Hello! I'm your AI assistant for your teacher. How can I help you today?", [], []
     # Get embeddings for the metadata
     refined_question_embedding = Utils.get_embeddings(refined_question)
@@ -889,6 +891,27 @@ def telegram_webhook(channel_id):
     message = data.get('message').get('text')
     chat_id = data.get('message').get('chat').get('id')
     print(message)
+    if message.startswith('/'):
+        command = message.split(' ')[0][1:]
+        if command == 'help':
+            reply = "Here are the commands you can use:\n\n/help - Show this message\n/start - Start a new conversation\n/stop - Stop the current conversation"
+            Utils.send_tg_message(channel.profile.get('access_key'), chat_id, reply)
+            return 'ok', 200
+        elif command == 'start':
+            conversation = Conversation(student=student, assistant=assistant)
+            conversation.save()
+            reply = "Welcome to " + assistant.teacher.name + "'s chat! How can I help you today?"
+            Utils.send_tg_message(channel.profile.get('access_key'), chat_id, reply)
+            return 'ok', 200
+        elif command == 'stop':
+            conversation.delete()
+            reply = "Conversation stopped. How can I help you today?"
+            Utils.send_tg_message(channel.profile.get('access_key'), chat_id, reply)
+            return 'ok', 200
+        else:
+            reply = "Sorry, I'm not able to answer that."
+            Utils.send_tg_message(channel.profile.get('access_key'), chat_id, reply)
+            return 'ok', 200
     res_message, ranked_own_content, ranked_supported_content = process_chat(message, assistant, conversation)
     print(res_message, ranked_own_content, ranked_supported_content)
     
