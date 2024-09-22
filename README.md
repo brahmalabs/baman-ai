@@ -10,6 +10,11 @@ BamanAI is an open-source platform that empowers tutors and educational institut
 - **Open Source**: Built with Python, allowing for community contributions and improvements.
 - **CRM Integration**: Seamlessly integrate with existing school CRM systems.
 
+## Demo
+
+You can try out the demo of BamanAI [here](https://bamanai.brahma-labs.com/).
+Watch the demo video [here](https://youtu.be/fObyWPQzLus).
+
 ## Getting Started
 
 ### Prerequisites
