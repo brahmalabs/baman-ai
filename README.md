@@ -63,8 +63,6 @@ To integrate WhatsApp and Telegram with BamanAI, tutors and institutes need to o
 
 Once you have the necessary access keys, update them in the BamanAI dashboard to connect your channels.
 
-For detailed integration instructions, please refer to our [Integration Guide](docs/integration-guide.md).
-
 ## Usage
 
 1. **Create an Assistant**: Use the web interface to create and train your custom AI assistant.
