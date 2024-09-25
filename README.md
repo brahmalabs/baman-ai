@@ -28,7 +28,7 @@ BamanAI is an open-source platform that empowers tutors and educational institut
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/brahma-labs/bamanai.git
+   git clone https://github.com/brahmalabs/baman-ai.git
    cd bamanai
    ```
 
