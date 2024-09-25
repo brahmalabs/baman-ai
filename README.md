@@ -12,7 +12,7 @@ BamanAI is an open-source platform that empowers tutors and educational institut
 
 ## Demo
 
-- You can try out the demo of BamanAI [here](https://bamanai.brahma-labs.com/). 
+- You can try out the demo of BamanAI [here](https://baman.brahma-labs.com/). 
 - Install frontend demo from [here](https://github.com/brahmalabs/bamanai-frontend-demo).
 - Watch the demo video [here](https://youtu.be/fObyWPQzLus).
 
