@@ -29,7 +29,7 @@ BamanAI is an open-source platform that empowers tutors and educational institut
 1. Clone the repository:
    ```bash
    git clone https://github.com/brahmalabs/baman-ai.git
-   cd bamanai
+   cd baman-ai
    ```
 
 2. Set up a virtual environment:
