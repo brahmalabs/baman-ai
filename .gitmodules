@@ -1,0 +1,4 @@
+[submodule "submodule-folder-name"]
+    path = frontend
+    url = https://github.com/brahmalabs/bamanai-frontend-demo.git
+
